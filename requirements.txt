@@ -1,3 +1,5 @@
 streamlit>=1.35.0
 anthropic>=0.25.0
 streamlit-ace>=0.1.1
+streamlit-audiorecorder>=0.0.5
+pydub>=0.25.1
