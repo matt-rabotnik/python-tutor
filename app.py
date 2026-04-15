@@ -1,6 +1,5 @@
 import streamlit as st
 import anthropic
-import base64
 import io
 from streamlit_ace import st_ace
 
@@ -116,31 +115,18 @@ def call_api(messages):
         return f"ERROR: {e}"
 
 def transcribe_audio(audio_bytes: bytes) -> str:
-    """Send audio to Claude for transcription and return the transcript."""
+    """Transcribe audio using OpenAI Whisper API."""
     try:
-        audio_b64 = base64.standard_b64encode(audio_bytes).decode("utf-8")
-        response = st.session_state.client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=1024,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Please transcribe the following audio exactly as spoken. Return only the transcribed text, nothing else."
-                    },
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "audio/wav",
-                            "data": audio_b64,
-                        },
-                    },
-                ],
-            }],
+        import openai
+        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "audio.wav"
+        result = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="en",
         )
-        return response.content[0].text.strip()
+        return result.text.strip()
     except Exception as e:
         return f"[Transcription error: {e}]"
 
