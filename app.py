@@ -57,7 +57,7 @@ THINGS TO AVOID:
 - Do not move forward until the student has articulated the current step in their own words.
 
 OPENING:
-When a student first arrives, greet them warmly and briefly, then ask: "What are you working on today — are you trying to write something, trace some code, or debug a problem?" Then wait."""
+When a student first arrives, greet them warmly and briefly, then ask: "What are you working on today — are you trying to write something, trace some code, or debug a problem?  You can ask me to set you a problem to work on or describe your own, you can also tell me if there's an area of programming that you need to practice." Then wait."""
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
