@@ -215,10 +215,19 @@ if "client" not in st.session_state:
         st.stop()
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-col_title, col_copy, col_reset = st.columns([5, 1.2, 0.8])
+col_title, col_mode, col_copy, col_reset = st.columns([4, 1.5, 1.2, 0.8])
 with col_title:
     st.markdown("### 💻 CS Problem-Solving Tutor")
     st.caption("Think it through — I won't write it for you, but I'll help you get there.")
+with col_mode:
+    mode = st.radio(
+        "Input mode",
+        options=["⌨️ Type", "🎤 Talk"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="input_mode",
+    )
+    talk_mode = (mode == "🎤 Talk")
 with col_copy:
     st.download_button(
         label="⬇ Transcript",
@@ -294,31 +303,29 @@ for i, msg in enumerate(st.session_state.messages):
             label = " 🎤" if msg.get("spoken") else ""
             st.markdown(strip_token(msg["content"]) + label)
 
-# ── Input area (text + mic) ────────────────────────────────────────────────────
+# ── Input area ────────────────────────────────────────────────────────────────
 last = st.session_state.messages[-1] if st.session_state.messages else None
 if last and last.get("type") != "pending_editor":
 
-    # Text input
-    if prompt := st.chat_input("Type your answer or question here…"):
-        submit_text(prompt, spoken=False)
-
-    # Microphone — minimal, label hidden via CSS
-    audio = st.audio_input(" ", key="audio_input", label_visibility="collapsed")
-
-    if audio is not None:
-        audio_bytes = audio.read()
-        audio_id = hash(audio_bytes)
-        if audio_id != st.session_state.last_audio_id:
-            st.session_state.last_audio_id = audio_id
-
-            with st.spinner("Transcribing…"):
-                transcript_text = transcribe_audio(audio_bytes)
-
-            if transcript_text and not transcript_text.startswith("[Transcription error"):
-                st.markdown(
-                    f'<div class="transcribed-preview">🎤 <em>{transcript_text}</em></div>',
-                    unsafe_allow_html=True,
-                )
-                submit_text(transcript_text, spoken=True)
-            else:
-                st.error(transcript_text or "Could not transcribe audio. Please try again or type your answer.")
+    if not talk_mode:
+        # ── TYPE mode ──
+        if prompt := st.chat_input("Type your answer or question here…"):
+            submit_text(prompt, spoken=False)
+    else:
+        # ── TALK mode ──
+        audio = st.audio_input("Record your answer", key="audio_input", label_visibility="collapsed")
+        if audio is not None:
+            audio_bytes = audio.read()
+            audio_id = hash(audio_bytes)
+            if audio_id != st.session_state.last_audio_id:
+                st.session_state.last_audio_id = audio_id
+                with st.spinner("Transcribing…"):
+                    transcript_text = transcribe_audio(audio_bytes)
+                if transcript_text and not transcript_text.startswith("[Transcription error"):
+                    st.markdown(
+                        f'<div class="transcribed-preview">🎤 <em>{transcript_text}</em></div>',
+                        unsafe_allow_html=True,
+                    )
+                    submit_text(transcript_text, spoken=True)
+                else:
+                    st.error(transcript_text or "Could not transcribe. Please try again.")
