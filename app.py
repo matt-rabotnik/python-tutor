@@ -105,7 +105,7 @@ st.markdown("""
 def call_api(messages):
     try:
         response = st.session_state.client.messages.create(
-            model="claude-opus-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             messages=messages,
