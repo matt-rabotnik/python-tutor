@@ -1,11 +1,12 @@
 import streamlit as st
 import anthropic
+from streamlit_ace import st_ace
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CS Problem-Solving Tutor",
     page_icon="💻",
-    layout="centered",
+    layout="wide",
 )
 
 # ── System prompt (hidden from students) ───────────────────────────────────────
@@ -17,6 +18,12 @@ CORE RULES — never break these:
 3. If a student is wrong, do not correct them directly. Ask a question that helps them notice the issue themselves.
 4. Keep your responses short. One question or one small nudge at a time. Resist the urge to explain everything.
 5. Match your language to the student — if they are struggling, simplify. If they are confident, push harder.
+
+WHEN A STUDENT SHARES CODE:
+- The student has pasted or written code into their editor and sent it to you.
+- Do not rewrite or complete it. Ask what they think it does, or where they think it might be going wrong.
+- If it is incomplete, ask: "What do you want the next part to do?"
+- If it has a bug, do not name the bug. Ask: "What did you expect this to do, and what do you think actually happens?"
 
 WHEN A STUDENT WANTS TO WRITE CODE:
 - Ask them to describe what they want the program to do before any code is written.
@@ -52,32 +59,29 @@ THINGS TO AVOID:
 OPENING:
 When a student first arrives, greet them warmly and briefly, then ask: "What are you working on today — are you trying to write something, trace some code, or debug a problem?" Then wait."""
 
-# ── Minimal custom CSS ─────────────────────────────────────────────────────────
+# ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Tighten up the header area */
-    .block-container { padding-top: 2rem; }
-    /* Style the reset button to be subtle */
-    .stButton button {
-        background: transparent;
-        border: 1px solid #ccc;
-        color: #666;
-        font-size: 0.8rem;
-        padding: 0.2rem 0.8rem;
+    .block-container { padding-top: 1.5rem; padding-bottom: 0; }
+    .editor-label {
+        font-size: 0.85rem;
+        color: #888;
+        margin-bottom: 0.25rem;
     }
-    .stButton button:hover {
-        border-color: #999;
-        color: #333;
+    /* Chat container scrollable */
+    .chat-area {
+        height: 65vh;
+        overflow-y: auto;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-col1, col2 = st.columns([5, 1])
-with col1:
+col_title, col_reset = st.columns([6, 1])
+with col_title:
     st.markdown("### 💻 CS Problem-Solving Tutor")
     st.caption("Think it through — I won't write it for you, but I'll help you get there.")
-with col2:
+with col_reset:
     if st.button("↺ Reset", help="Start a new conversation"):
         st.session_state.messages = []
         st.rerun()
@@ -97,37 +101,82 @@ if "client" not in st.session_state:
         st.error("API key not found. Add ANTHROPIC_API_KEY to your Streamlit secrets.")
         st.stop()
 
-# ── Render conversation history ────────────────────────────────────────────────
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# ── Two-column layout ──────────────────────────────────────────────────────────
+col_chat, col_editor = st.columns([1, 1], gap="medium")
 
-# ── Opening message if conversation is empty ───────────────────────────────────
-if not st.session_state.messages:
-    with st.chat_message("assistant"):
-        opening = "Hi! I'm your CS tutor. I won't write code for you — but I'll work through problems with you step by step.\n\nWhat are you working on today — are you trying to **write** something, **trace** some code, or **debug** a problem?"
-        st.markdown(opening)
-        st.session_state.messages.append({"role": "assistant", "content": opening})
+# ── LEFT — Chat ────────────────────────────────────────────────────────────────
+with col_chat:
+    st.markdown("**Conversation**")
 
-# ── Chat input ─────────────────────────────────────────────────────────────────
-if prompt := st.chat_input("Type your answer or question here…"):
-    # Add and display user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    # Opening message
+    if not st.session_state.messages:
+        with st.chat_message("assistant"):
+            opening = "Hi! I'm your CS tutor. I won't write code for you — but I'll work through problems with you step by step.\n\nWhat are you working on today — are you trying to **write** something, **trace** some code, or **debug** a problem?"
+            st.markdown(opening)
+            st.session_state.messages.append({"role": "assistant", "content": opening})
 
-    # Call API with full history
-    with st.chat_message("assistant"):
-        with st.spinner(""):
-            try:
-                response = st.session_state.client.messages.create(
-                    model="claude-opus-4-5",
-                    max_tokens=1024,
-                    system=SYSTEM_PROMPT,
-                    messages=st.session_state.messages,
-                )
-                reply = response.content[0].text
-                st.markdown(reply)
-                st.session_state.messages.append({"role": "assistant", "content": reply})
-            except Exception as e:
-                st.error(f"Something went wrong: {e}")
+    # Render history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Text chat input
+    if prompt := st.chat_input("Type your answer or question here…"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner(""):
+                try:
+                    response = st.session_state.client.messages.create(
+                        model="claude-opus-4-5",
+                        max_tokens=1024,
+                        system=SYSTEM_PROMPT,
+                        messages=st.session_state.messages,
+                    )
+                    reply = response.content[0].text
+                    st.markdown(reply)
+                    st.session_state.messages.append({"role": "assistant", "content": reply})
+                except Exception as e:
+                    st.error(f"Something went wrong: {e}")
+
+# ── RIGHT — Code editor ────────────────────────────────────────────────────────
+with col_editor:
+    st.markdown("**Code editor**")
+    st.caption("Write your code here. Use the button to send it to the tutor.")
+
+    code = st_ace(
+        placeholder="# Start typing your Python here...",
+        language="python",
+        theme="tomorrow",
+        font_size=14,
+        tab_size=4,
+        show_gutter=True,
+        show_print_margin=False,
+        wrap=False,
+        auto_update=True,
+        height=400,
+        key="ace_editor",
+    )
+
+    send_col, clear_col = st.columns([2, 1])
+    with send_col:
+        if st.button("▶ Send code to tutor", use_container_width=True):
+            if code and code.strip():
+                message = f"Here is my code:\n\n```python\n{code}\n```"
+                st.session_state.messages.append({"role": "user", "content": message})
+                with st.spinner(""):
+                    try:
+                        response = st.session_state.client.messages.create(
+                            model="claude-opus-4-5",
+                            max_tokens=1024,
+                            system=SYSTEM_PROMPT,
+                            messages=st.session_state.messages,
+                        )
+                        reply = response.content[0].text
+                        st.session_state.messages.append({"role": "assistant", "content": reply})
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
+            else:
+                st.warning("Editor is empty — write some code first.")
