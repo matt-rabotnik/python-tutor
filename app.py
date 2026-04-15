@@ -90,6 +90,15 @@ st.markdown("""
         color: #333;
         margin: 0.4rem 0;
     }
+    /* Compact the audio recorder to feel like a mic button */
+    div[data-testid="stAudioInput"] {
+        margin-top: -0.5rem;
+    }
+    div[data-testid="stAudioInput"] > div {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -293,9 +302,8 @@ if last and last.get("type") != "pending_editor":
     if prompt := st.chat_input("Type your answer or question here…"):
         submit_text(prompt, spoken=False)
 
-    # Microphone
-    st.markdown("**Or speak your answer:**")
-    audio = st.audio_input("🎤 Record your answer", key="audio_input")
+    # Microphone — minimal, label hidden via CSS
+    audio = st.audio_input(" ", key="audio_input", label_visibility="collapsed")
 
     if audio is not None:
         audio_bytes = audio.read()
