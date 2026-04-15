@@ -69,7 +69,12 @@ EDITOR_TOKEN = "[CODE_EDITOR]"
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .block-container { padding-top: 2.5rem; }
+    /* Hide Streamlit's top toolbar/header bar */
+    header[data-testid="stHeader"] { display: none; }
+    #MainMenu { display: none; }
+    footer { display: none; }
+    /* Pull content to the top */
+    .block-container { padding-top: 1.5rem !important; margin-top: 0 !important; }
     div[data-testid="stChatMessage"] { margin-bottom: 0.5rem; }
     .editor-submitted {
         background: #f8f8f8;
