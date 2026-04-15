@@ -69,7 +69,7 @@ EDITOR_TOKEN = "[CODE_EDITOR]"
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .block-container { padding-top: 1.5rem; }
+    .block-container { padding-top: 2.5rem; }
     div[data-testid="stChatMessage"] { margin-bottom: 0.5rem; }
     .editor-submitted {
         background: #f8f8f8;
@@ -164,7 +164,7 @@ st.divider()
 
 # ── Opening message ────────────────────────────────────────────────────────────
 if not st.session_state.messages:
-    opening = "Hi! I'm your CS tutor. I won't write code for you — but I'll work through problems with you step by step.\n\nWhat are you working on today — are you trying to **write** something, **trace** some code, or **debug** a problem?"
+    opening = "Hi! I'm your CS tutor. I won't write code for you — but I'll work through problems with you step by step.\n\nWhat are you working on today — would you like help answering a question, trace some code or debug some code, or would you just like me to help explain an area of Python?"
     st.session_state.messages.append({"role": "assistant", "content": opening})
 
 # ── Render conversation ────────────────────────────────────────────────────────
