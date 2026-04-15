@@ -1,6 +1,9 @@
 import streamlit as st
 import anthropic
+import base64
+import io
 from streamlit_ace import st_ace
+from audiorecorder import audiorecorder
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -69,28 +72,24 @@ EDITOR_TOKEN = "[CODE_EDITOR]"
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Hide Streamlit's top toolbar/header bar */
     header[data-testid="stHeader"] { display: none; }
     #MainMenu { display: none; }
     footer { display: none; }
-    /* Pull content to the top */
     .block-container { padding-top: 1.5rem !important; margin-top: 0 !important; }
     div[data-testid="stChatMessage"] { margin-bottom: 0.5rem; }
-    .editor-submitted {
-        background: #f8f8f8;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        padding: 0.75rem 1rem;
-        font-family: monospace;
-        font-size: 13px;
-        white-space: pre-wrap;
-        color: #333;
-        margin: 0.5rem 0;
-    }
     .editor-label {
         font-size: 0.75rem;
         color: #999;
         margin-bottom: 0.25rem;
+    }
+    .transcribed-preview {
+        background: #f0f4ff;
+        border: 1px solid #c8d4f0;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+        color: #333;
+        margin: 0.4rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -108,12 +107,39 @@ def call_api(messages):
     except Exception as e:
         return f"ERROR: {e}"
 
+def transcribe_audio(audio_bytes: bytes) -> str:
+    """Send audio to Claude for transcription and return the transcript."""
+    try:
+        audio_b64 = base64.standard_b64encode(audio_bytes).decode("utf-8")
+        response = st.session_state.client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Please transcribe the following audio exactly as spoken. Return only the transcribed text, nothing else."
+                    },
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "audio/wav",
+                            "data": audio_b64,
+                        },
+                    },
+                ],
+            }],
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        return f"[Transcription error: {e}]"
+
 def strip_token(text):
-    """Remove [CODE_EDITOR] token from display text."""
     return text.replace(EDITOR_TOKEN, "").strip()
 
 def build_transcript():
-    """Build plain text transcript of the full conversation."""
     lines = ["CS PROBLEM-SOLVING TUTOR — SESSION TRANSCRIPT", "=" * 50, ""]
     for msg in st.session_state.messages:
         role = "Tutor" if msg["role"] == "assistant" else "Student"
@@ -124,7 +150,8 @@ def build_transcript():
             lines.append(content)
         else:
             clean = strip_token(content)
-            lines.append(f"{role}:")
+            prefix = " [spoken]" if msg.get("spoken") else ""
+            lines.append(f"{role}{prefix}:")
             lines.append(clean)
         lines.append("")
     return "\n".join(lines)
@@ -132,9 +159,43 @@ def build_transcript():
 def wants_editor(text):
     return EDITOR_TOKEN in text
 
+def build_api_messages():
+    api_messages = []
+    for m in st.session_state.messages:
+        if m.get("type") == "code":
+            api_messages.append({
+                "role": "user",
+                "content": f"Here is my code:\n\n```python\n{m['content']}\n```"
+            })
+        elif m.get("type") not in ("pending_editor",):
+            api_messages.append({
+                "role": m["role"],
+                "content": strip_token(m["content"])
+            })
+    return api_messages
+
+def submit_text(prompt: str, spoken: bool = False):
+    """Add a user message and get a tutor reply."""
+    st.session_state.messages.append({
+        "role": "user",
+        "content": prompt,
+        "type": "text",
+        "spoken": spoken,
+    })
+    reply = call_api(build_api_messages())
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": reply,
+        "type": "pending_editor" if wants_editor(reply) else "text",
+    })
+    st.rerun()
+
 # ── Session state ──────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "last_audio_id" not in st.session_state:
+    st.session_state.last_audio_id = None
 
 if "client" not in st.session_state:
     try:
@@ -151,10 +212,9 @@ with col_title:
     st.markdown("### 💻 CS Problem-Solving Tutor")
     st.caption("Think it through — I won't write it for you, but I'll help you get there.")
 with col_copy:
-    transcript = build_transcript()
     st.download_button(
         label="⬇ Transcript",
-        data=transcript,
+        data=build_transcript(),
         file_name="cs_tutor_session.txt",
         mime="text/plain",
         help="Download the full conversation as a text file",
@@ -163,6 +223,7 @@ with col_copy:
 with col_reset:
     if st.button("↺ Reset", help="Start a new conversation", use_container_width=True):
         st.session_state.messages = []
+        st.session_state.last_audio_id = None
         st.rerun()
 
 st.divider()
@@ -177,17 +238,14 @@ for i, msg in enumerate(st.session_state.messages):
     role = msg["role"]
 
     if msg.get("type") == "code":
-        # Submitted code block — read only display
         with st.chat_message("user"):
             st.markdown('<div class="editor-label">Code submitted:</div>', unsafe_allow_html=True)
             st.code(msg["content"], language="python")
 
     elif msg.get("type") == "pending_editor":
-        # Active (unsubmitted) editor — only the last one is ever active
         with st.chat_message("assistant"):
             st.markdown(strip_token(msg["content"]))
         st.markdown('<div class="editor-label">Write your code below:</div>', unsafe_allow_html=True)
-        editor_key = f"editor_{i}"
         code_input = st_ace(
             placeholder="# Write your Python here...",
             language="python",
@@ -199,77 +257,68 @@ for i, msg in enumerate(st.session_state.messages):
             wrap=False,
             auto_update=True,
             height=250,
-            key=editor_key,
+            key=f"editor_{i}",
         )
         if st.button("▶ Submit code", key=f"submit_{i}", type="primary"):
             if code_input and code_input.strip():
-                # Mark this message as no longer pending
                 st.session_state.messages[i]["type"] = "editor_done"
-                # Add the submitted code as a user message
                 st.session_state.messages.append({
                     "role": "user",
                     "content": code_input,
-                    "type": "code"
+                    "type": "code",
                 })
-                # Get tutor response
-                api_messages = []
-                for m in st.session_state.messages:
-                    if m.get("type") == "code":
-                        api_messages.append({
-                            "role": "user",
-                            "content": f"Here is my code:\n\n```python\n{m['content']}\n```"
-                        })
-                    elif m.get("type") not in ("pending_editor",):
-                        api_messages.append({
-                            "role": m["role"],
-                            "content": strip_token(m["content"])
-                        })
-                reply = call_api(api_messages)
+                reply = call_api(build_api_messages())
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": reply,
-                    "type": "pending_editor" if wants_editor(reply) else "text"
+                    "type": "pending_editor" if wants_editor(reply) else "text",
                 })
                 st.rerun()
             else:
                 st.warning("Editor is empty — write some code first.")
 
     elif msg.get("type") == "editor_done":
-        # Tutor message whose editor has been submitted — show text only
         with st.chat_message("assistant"):
             st.markdown(strip_token(msg["content"]))
 
     else:
-        # Normal text message
         with st.chat_message(role):
-            st.markdown(strip_token(msg["content"]))
+            label = " 🎤" if msg.get("spoken") else ""
+            st.markdown(strip_token(msg["content"]) + label)
 
-# ── Chat input (only show if last message is not a pending editor) ─────────────
+# ── Input area (text + mic) ────────────────────────────────────────────────────
 last = st.session_state.messages[-1] if st.session_state.messages else None
 if last and last.get("type") != "pending_editor":
+
+    # Text input
     if prompt := st.chat_input("Type your answer or question here…"):
-        st.session_state.messages.append({
-            "role": "user",
-            "content": prompt,
-            "type": "text"
-        })
-        # Build API message list
-        api_messages = []
-        for m in st.session_state.messages:
-            if m.get("type") == "code":
-                api_messages.append({
-                    "role": "user",
-                    "content": f"Here is my code:\n\n```python\n{m['content']}\n```"
-                })
-            elif m.get("type") not in ("pending_editor",):
-                api_messages.append({
-                    "role": m["role"],
-                    "content": strip_token(m["content"])
-                })
-        reply = call_api(api_messages)
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": reply,
-            "type": "pending_editor" if wants_editor(reply) else "text"
-        })
-        st.rerun()
+        submit_text(prompt, spoken=False)
+
+    # Microphone
+    st.markdown("**Or speak your answer:**")
+    audio = audiorecorder(
+        start_prompt="🎤 Click to record",
+        stop_prompt="⏹ Click to stop",
+        pause_prompt="",
+        key="audio_input",
+    )
+
+    if audio is not None and len(audio) > 0:
+        audio_id = len(audio)
+        if audio_id != st.session_state.last_audio_id:
+            st.session_state.last_audio_id = audio_id
+            buf = io.BytesIO()
+            audio.export(buf, format="wav")
+            audio_bytes = buf.getvalue()
+
+            with st.spinner("Transcribing…"):
+                transcript_text = transcribe_audio(audio_bytes)
+
+            if transcript_text and not transcript_text.startswith("[Transcription error"):
+                st.markdown(
+                    f'<div class="transcribed-preview">🎤 <em>{transcript_text}</em></div>',
+                    unsafe_allow_html=True,
+                )
+                submit_text(transcript_text, spoken=True)
+            else:
+                st.error(transcript_text or "Could not transcribe audio. Please try again or type your answer.")
