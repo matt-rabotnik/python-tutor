@@ -214,35 +214,25 @@ with col_mode:
     )
     talk_mode = (mode == "🎤 Talk")
 with col_copy:
-    transcript = build_transcript()
-    safe = transcript.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
-    components.html(f"""
-        <style>
-            button {{
-                font-size: 12px;
-                padding: 3px 8px;
-                background: transparent;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                color: #666;
-                cursor: pointer;
-                width: 100%;
-            }}
-            button:hover {{ border-color: #999; color: #333; }}
-        </style>
-        <button onclick="
-            navigator.clipboard.writeText(`{safe}`).then(() => {{
-                this.textContent = '✓ Copied';
-                setTimeout(() => this.textContent = '⎘ Copy', 1800);
-            }})">⎘ Copy</button>
-    """, height=36)
+    if st.button("⎘ Transcript", use_container_width=True, help="View and copy session transcript"):
+        st.session_state.show_transcript = not st.session_state.get("show_transcript", False)
 with col_reset:
     if st.button("↺ Reset", help="Start a new conversation", use_container_width=True):
         st.session_state.messages = []
         st.session_state.last_audio_id = None
+        st.session_state.show_transcript = False
         st.rerun()
 
+if "show_transcript" not in st.session_state:
+    st.session_state.show_transcript = False
+
 st.divider()
+
+# ── Transcript panel ───────────────────────────────────────────────────────────
+if st.session_state.show_transcript:
+    st.caption("Copy the transcript below, then close.")
+    st.code(build_transcript(), language=None)
+    st.divider()
 
 # ── Opening message ────────────────────────────────────────────────────────────
 if not st.session_state.messages:
