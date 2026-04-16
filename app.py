@@ -5,7 +5,7 @@ from streamlit_ace import st_ace
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="CS Problem-Solving Tutor",
+    page_title="CS Tutor",
     page_icon="💻",
     layout="centered",
 )
@@ -19,6 +19,12 @@ CORE RULES — never break these:
 3. If a student is wrong, do not correct them directly. Ask a question that helps them notice the issue themselves.
 4. Keep your responses short. One question or one small nudge at a time. Resist the urge to explain everything.
 5. Match your language to the student — if they are struggling, simplify. If they are confident, push harder.
+
+REFERRING TO PREVIOUSLY SUBMITTED CODE:
+- The conversation history contains all code the student has already submitted.
+- Never ask a student to re-enter or re-type code they have already submitted.
+- Refer back to their previous code directly: "In the code you submitted earlier..." or "Looking at what you wrote..."
+- Only request a new code editor ([CODE_EDITOR]) when you want the student to write genuinely new or revised code.
 
 REQUESTING A CODE EDITOR:
 When you want the student to write or edit code, end your message with exactly this token on its own line:
@@ -63,7 +69,7 @@ THINGS TO AVOID:
 - Do not move forward until the student has articulated the current step in their own words.
 
 OPENING:
-When a student first arrives, greet them warmly and briefly, then ask: "What are you working on today — are you trying to write something, trace some code, or debug a problem?" Then wait."""
+When a student first arrives, greet them warmly and briefly, then ask: "What are you working on today — would you like help answering a question, trace some code or debug some code, or would you just like me to help explain an area of Python?" Then wait."""
 
 EDITOR_TOKEN = "[CODE_EDITOR]"
 
@@ -73,13 +79,9 @@ st.markdown("""
     header[data-testid="stHeader"] { display: none; }
     #MainMenu { display: none; }
     footer { display: none; }
-    .block-container { padding-top: 1.5rem !important; margin-top: 0 !important; }
+    .block-container { padding-top: 1rem !important; margin-top: 0 !important; }
     div[data-testid="stChatMessage"] { margin-bottom: 0.5rem; }
-    .editor-label {
-        font-size: 0.75rem;
-        color: #999;
-        margin-bottom: 0.25rem;
-    }
+    .editor-label { font-size: 0.75rem; color: #999; margin-bottom: 0.25rem; }
     .transcribed-preview {
         background: #f0f4ff;
         border: 1px solid #c8d4f0;
@@ -89,30 +91,38 @@ st.markdown("""
         color: #333;
         margin: 0.4rem 0;
     }
-    /* Compact the audio recorder to feel like a mic button */
-    div[data-testid="stAudioInput"] {
-        margin-top: -0.5rem;
+    .copy-btn {
+        font-size: 0.78rem;
+        padding: 0.25rem 0.6rem;
+        background: transparent;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        color: #666;
+        cursor: pointer;
+        width: 100%;
     }
-    div[data-testid="stAudioInput"] > div {
-        border: none !important;
-        background: transparent !important;
-        padding: 0 !important;
-    }
+    .copy-btn:hover { border-color: #999; color: #333; }
+    div[data-testid="stRadio"] label { font-size: 0.82rem; }
+    div[data-testid="stRadio"] { margin-top: 0.3rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-def call_api(messages):
-    try:
-        response = st.session_state.client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-        )
-        return response.content[0].text
-    except Exception as e:
-        return f"ERROR: {e}"
+def stream_response(messages):
+    """Stream Claude's response word by word, return full text."""
+    full_reply = ""
+    with st.session_state.client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=512,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    ) as stream:
+        box = st.empty()
+        for text in stream.text_stream:
+            full_reply += text
+            box.markdown(strip_token(full_reply) + "▌")
+        box.markdown(strip_token(full_reply))
+    return full_reply
 
 def transcribe_audio(audio_bytes: bytes) -> str:
     """Transcribe audio using OpenAI Whisper API."""
@@ -134,19 +144,17 @@ def strip_token(text):
     return text.replace(EDITOR_TOKEN, "").strip()
 
 def build_transcript():
-    lines = ["CS PROBLEM-SOLVING TUTOR — SESSION TRANSCRIPT", "=" * 50, ""]
+    lines = ["CS TUTOR — SESSION TRANSCRIPT", "=" * 50, ""]
     for msg in st.session_state.messages:
         role = "Tutor" if msg["role"] == "assistant" else "Student"
-        content = msg["content"]
         if msg.get("type") == "code":
             lines.append(f"{role}:")
             lines.append("[Code submitted]")
-            lines.append(content)
+            lines.append(msg["content"])
         else:
-            clean = strip_token(content)
             prefix = " [spoken]" if msg.get("spoken") else ""
             lines.append(f"{role}{prefix}:")
-            lines.append(clean)
+            lines.append(strip_token(msg["content"]))
         lines.append("")
     return "\n".join(lines)
 
@@ -169,14 +177,11 @@ def build_api_messages():
     return api_messages
 
 def submit_text(prompt: str, spoken: bool = False):
-    """Add a user message and get a tutor reply."""
     st.session_state.messages.append({
-        "role": "user",
-        "content": prompt,
-        "type": "text",
-        "spoken": spoken,
+        "role": "user", "content": prompt, "type": "text", "spoken": spoken,
     })
-    reply = call_api(build_api_messages())
+    with st.chat_message("assistant"):
+        reply = stream_response(build_api_messages())
     st.session_state.messages.append({
         "role": "assistant",
         "content": reply,
@@ -201,28 +206,26 @@ if "client" not in st.session_state:
         st.stop()
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-col_title, col_mode, col_copy, col_reset = st.columns([4, 1.5, 1.2, 0.8])
+col_title, col_mode, col_copy, col_reset = st.columns([4, 1.6, 1.0, 0.9])
 with col_title:
-    st.markdown("### 💻 CS Problem-Solving Tutor")
-    st.caption("Think it through — I won't write it for you, but I'll help you get there.")
+    st.markdown("**💻 CS Tutor**")
 with col_mode:
     mode = st.radio(
-        "Input mode",
-        options=["⌨️ Type", "🎤 Talk"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="input_mode",
+        "mode", options=["⌨️ Type", "🎤 Talk"],
+        horizontal=True, label_visibility="collapsed", key="input_mode",
     )
     talk_mode = (mode == "🎤 Talk")
 with col_copy:
-    st.download_button(
-        label="⬇ Transcript",
-        data=build_transcript(),
-        file_name="cs_tutor_session.txt",
-        mime="text/plain",
-        help="Download the full conversation as a text file",
-        use_container_width=True,
-    )
+    # Build transcript and inject as JS clipboard copy
+    transcript = build_transcript()
+    safe = transcript.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+    st.markdown(f"""
+        <button class="copy-btn" onclick="
+            navigator.clipboard.writeText(`{safe}`).then(() => {{
+                this.textContent = '✓ Copied';
+                setTimeout(() => this.textContent = '⎘ Copy', 1800);
+            }})">⎘ Copy</button>
+    """, unsafe_allow_html=True)
 with col_reset:
     if st.button("↺ Reset", help="Start a new conversation", use_container_width=True):
         st.session_state.messages = []
@@ -251,26 +254,20 @@ for i, msg in enumerate(st.session_state.messages):
         st.markdown('<div class="editor-label">Write your code below:</div>', unsafe_allow_html=True)
         code_input = st_ace(
             placeholder="# Write your Python here...",
-            language="python",
-            theme="tomorrow",
-            font_size=14,
-            tab_size=4,
-            show_gutter=True,
-            show_print_margin=False,
-            wrap=False,
-            auto_update=True,
-            height=250,
+            language="python", theme="tomorrow",
+            font_size=14, tab_size=4,
+            show_gutter=True, show_print_margin=False,
+            wrap=False, auto_update=True, height=250,
             key=f"editor_{i}",
         )
         if st.button("▶ Submit code", key=f"submit_{i}", type="primary"):
             if code_input and code_input.strip():
                 st.session_state.messages[i]["type"] = "editor_done"
                 st.session_state.messages.append({
-                    "role": "user",
-                    "content": code_input,
-                    "type": "code",
+                    "role": "user", "content": code_input, "type": "code",
                 })
-                reply = call_api(build_api_messages())
+                with st.chat_message("assistant"):
+                    reply = stream_response(build_api_messages())
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": reply,
@@ -294,12 +291,10 @@ last = st.session_state.messages[-1] if st.session_state.messages else None
 if last and last.get("type") != "pending_editor":
 
     if not talk_mode:
-        # ── TYPE mode ──
         if prompt := st.chat_input("Type your answer or question here…"):
             submit_text(prompt, spoken=False)
     else:
-        # ── TALK mode ──
-        audio = st.audio_input("Record your answer", key="audio_input", label_visibility="collapsed")
+        audio = st.audio_input("Record", key="audio_input", label_visibility="collapsed")
         if audio is not None:
             audio_bytes = audio.read()
             audio_id = hash(audio_bytes)
