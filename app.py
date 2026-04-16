@@ -1,6 +1,7 @@
 import streamlit as st
 import anthropic
 import io
+import streamlit.components.v1 as components
 from streamlit_ace import st_ace
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -216,16 +217,28 @@ with col_mode:
     )
     talk_mode = (mode == "🎤 Talk")
 with col_copy:
-    # Build transcript and inject as JS clipboard copy
     transcript = build_transcript()
     safe = transcript.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
-    st.markdown(f"""
-        <button class="copy-btn" onclick="
+    components.html(f"""
+        <style>
+            button {{
+                font-size: 12px;
+                padding: 3px 8px;
+                background: transparent;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                color: #666;
+                cursor: pointer;
+                width: 100%;
+            }}
+            button:hover {{ border-color: #999; color: #333; }}
+        </style>
+        <button onclick="
             navigator.clipboard.writeText(`{safe}`).then(() => {{
                 this.textContent = '✓ Copied';
                 setTimeout(() => this.textContent = '⎘ Copy', 1800);
             }})">⎘ Copy</button>
-    """, unsafe_allow_html=True)
+    """, height=36)
 with col_reset:
     if st.button("↺ Reset", help="Start a new conversation", use_container_width=True):
         st.session_state.messages = []
