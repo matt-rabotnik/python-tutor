@@ -181,13 +181,7 @@ def submit_text(prompt: str, spoken: bool = False):
     st.session_state.messages.append({
         "role": "user", "content": prompt, "type": "text", "spoken": spoken,
     })
-    with st.chat_message("assistant"):
-        reply = stream_response(build_api_messages())
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": reply,
-        "type": "pending_editor" if wants_editor(reply) else "text",
-    })
+    st.session_state.pending_response = True
     st.rerun()
 
 # ── Session state ──────────────────────────────────────────────────────────────
@@ -196,6 +190,9 @@ if "messages" not in st.session_state:
 
 if "last_audio_id" not in st.session_state:
     st.session_state.last_audio_id = None
+
+if "pending_response" not in st.session_state:
+    st.session_state.pending_response = False
 
 if "client" not in st.session_state:
     try:
@@ -279,13 +276,7 @@ for i, msg in enumerate(st.session_state.messages):
                 st.session_state.messages.append({
                     "role": "user", "content": code_input, "type": "code",
                 })
-                with st.chat_message("assistant"):
-                    reply = stream_response(build_api_messages())
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": reply,
-                    "type": "pending_editor" if wants_editor(reply) else "text",
-                })
+                st.session_state.pending_response = True
                 st.rerun()
             else:
                 st.warning("Editor is empty — write some code first.")
@@ -298,6 +289,22 @@ for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(role):
             label = " 🎤" if msg.get("spoken") else ""
             st.markdown(strip_token(msg["content"]) + label)
+
+# ── Scroll anchor ──────────────────────────────────────────────────────────────
+st.markdown('<div id="bottom"></div>', unsafe_allow_html=True)
+components.html("<script>document.getElementById('bottom')?.scrollIntoView({behavior:'smooth'});</script>", height=0)
+
+# ── Fire pending API response (after user message has rendered) ────────────────
+if st.session_state.pending_response:
+    st.session_state.pending_response = False
+    with st.chat_message("assistant"):
+        reply = stream_response(build_api_messages())
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": reply,
+        "type": "pending_editor" if wants_editor(reply) else "text",
+    })
+    st.rerun()
 
 # ── Input area ────────────────────────────────────────────────────────────────
 last = st.session_state.messages[-1] if st.session_state.messages else None
