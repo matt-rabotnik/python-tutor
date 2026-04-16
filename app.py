@@ -291,8 +291,27 @@ for i, msg in enumerate(st.session_state.messages):
             st.markdown(strip_token(msg["content"]) + label)
 
 # ── Scroll anchor ──────────────────────────────────────────────────────────────
-st.markdown('<div id="bottom"></div>', unsafe_allow_html=True)
-components.html("<script>document.getElementById('bottom')?.scrollIntoView({behavior:'smooth'});</script>", height=0)
+components.html("""
+<script>
+    function scrollToBottom() {
+        // Target Streamlit's main scrollable container
+        const containers = [
+            document.querySelector('.main .block-container'),
+            document.querySelector('section.main'),
+            document.documentElement,
+            document.body
+        ];
+        for (const el of containers) {
+            if (el) el.scrollTop = el.scrollHeight;
+        }
+        window.scrollTo(0, document.body.scrollHeight);
+    }
+    // Run immediately and after short delays to catch late-rendering widgets
+    scrollToBottom();
+    setTimeout(scrollToBottom, 100);
+    setTimeout(scrollToBottom, 400);
+</script>
+""", height=0)
 
 # ── Fire pending API response (after user message has rendered) ────────────────
 if st.session_state.pending_response:
